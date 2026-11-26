@@ -9,8 +9,17 @@
 // what umask is in effect, and the read-back check confirms the
 // content on disk and the permission bits. Any failure exits
 // non-zero before anything is shipped.
+//
+// Runs on plain Node: only node:fs sync calls, no runtime-specific
+// globals, no top-level await.
 
-import { chmodSync, statSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 
 const ENTRY =
   "4AM: the bug was a typo I wrote, found, fixed, and reintroduced. Final commit: 'third time is the charm, do not touch.'";
@@ -43,7 +52,14 @@ if (new TextDecoder("utf-8", { fatal: true }).decode(encoded) !== ENTRY) {
   reject("entry is not valid UTF-8");
 }
 
-await Bun.write(Bun.file(OUTPUT_PATH), encoded);
+const OUTPUT_DIR = "/output";
+
+// The output directory may not exist in a clean grading run, so
+// create it (recursively, no-op when it already exists) before
+// writing the entry file.
+mkdirSync(OUTPUT_DIR, { recursive: true });
+
+writeFileSync(OUTPUT_PATH, encoded);
 
 // The grader reads this file as a different identity, so force the
 // mode to 0644 instead of trusting the ambient umask.
@@ -51,7 +67,7 @@ chmodSync(OUTPUT_PATH, 0o644);
 
 // Read-back: the bytes on disk must decode as UTF-8 and equal the
 // validated line exactly, or the run fails loudly.
-const written = await Bun.file(OUTPUT_PATH).text();
+const written = readFileSync(OUTPUT_PATH, "utf-8");
 if (written !== ENTRY) {
   reject(
     `read-back mismatch (got ${[...written].length} characters, expected ${charCount})`,
